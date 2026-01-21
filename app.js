@@ -15,6 +15,38 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+function formatResponse(data) {
+    let html = '';
+
+    // Show routing metadata
+    html += '<div class="metadata">';
+    html += `<span class="badge model">${escapeHtml(data.model)}</span>`;
+    html += `<span class="badge plan-type">${escapeHtml(data.plan_type)}</span>`;
+    if (data.usage) {
+        html += `<span class="badge tokens">${data.usage.total_tokens || 0} tokens</span>`;
+    }
+    html += '</div>';
+
+    // Show steps for multi-step responses
+    if (data.steps && data.steps.length > 0) {
+        html += '<div class="steps">';
+        for (const step of data.steps) {
+            html += `<div class="step ${step.status}">`;
+            html += `<div class="step-header">Step ${step.step}: ${escapeHtml(step.task)}</div>`;
+            html += `<div class="step-output">${escapeHtml(step.output || 'No output')}</div>`;
+            html += '</div>';
+        }
+        html += '</div>';
+    } else {
+        // Single response
+        html += `<div class="response-content">${escapeHtml(data.response)}</div>`;
+    }
+
+    return html;
+}
+
+function setResponse(content, className = 'content') {
+    responseDisplay.innerHTML = `<p class="${className}">${content}</p>`;
 function formatLatency(ms) {
     if (ms < 1000) {
         return `${Math.round(ms)}ms`;
@@ -39,6 +71,8 @@ function hideError() {
 
 function setLoading(isLoading) {
     submitBtn.disabled = isLoading;
+    if (isLoading) {
+        setResponse('Processing... (classifying query and selecting model)', 'loading');
     submitBtn.textContent = isLoading ? 'Processing...' : 'Submit';
 }
 
@@ -252,7 +286,7 @@ async function submitPrompt() {
         }
 
         const data = await response.json();
-        renderExecutionFlow(prompt, data);
+        responseDisplay.innerHTML = formatResponse(data);
     } catch (error) {
         showError(`Error: ${error.message}`);
     } finally {
