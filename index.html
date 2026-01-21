@@ -10,16 +10,20 @@
     <div class="container">
         <header>
             <h1>LLM Router</h1>
+            <p class="subtitle">Intelligent query routing to the right model</p>
         </header>
 
         <main>
             <div class="input-section">
                 <textarea
                     id="prompt-input"
-                    placeholder="Enter your prompt here..."
+                    placeholder="Try: 'What is the capital of France?' or 'Write a Python function to check if a number is prime'"
                     rows="4"
                 ></textarea>
-                <button id="submit-btn" type="button">Submit</button>
+                <div class="input-actions">
+                    <span class="hint">Ctrl+Enter to submit</span>
+                    <button id="submit-btn" type="button">Submit</button>
+                </div>
             </div>
 
             <div class="response-section">
