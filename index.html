@@ -26,12 +26,51 @@
                 </div>
             </div>
 
-            <div class="response-section">
-                <h2>Response</h2>
-                <div id="response-display" class="response-display">
-                    <p class="placeholder">Response will appear here...</p>
+            <div id="execution-flow" class="execution-flow hidden">
+                <h2>Execution Flow</h2>
+
+                <div class="flow-container">
+                    <div class="flow-step" id="step-prompt">
+                        <div class="step-header">
+                            <span class="step-icon">1</span>
+                            <span class="step-title">User Prompt</span>
+                        </div>
+                        <div class="step-content" id="prompt-display"></div>
+                    </div>
+
+                    <div class="flow-arrow"></div>
+
+                    <div class="flow-step" id="step-routing">
+                        <div class="step-header">
+                            <span class="step-icon">2</span>
+                            <span class="step-title">Model Selection</span>
+                        </div>
+                        <div class="step-content" id="routing-display"></div>
+                    </div>
+
+                    <div class="flow-arrow"></div>
+
+                    <div class="flow-step" id="step-execution">
+                        <div class="step-header">
+                            <span class="step-icon">3</span>
+                            <span class="step-title">Execution</span>
+                        </div>
+                        <div class="step-content" id="execution-display"></div>
+                    </div>
+
+                    <div class="flow-arrow"></div>
+
+                    <div class="flow-step" id="step-response">
+                        <div class="step-header">
+                            <span class="step-icon">4</span>
+                            <span class="step-title">Final Response</span>
+                        </div>
+                        <div class="step-content" id="response-display"></div>
+                    </div>
                 </div>
             </div>
+
+            <div id="error-display" class="error-display hidden"></div>
         </main>
     </div>
 
