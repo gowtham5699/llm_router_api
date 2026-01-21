@@ -5,6 +5,8 @@ from app.executor import execute_plan
 from app.meta_router import route_request
 from app.models.schemas import Message, PlanType, RouteRequest, RouteResponse
 
+from app.api import router
+
 app = FastAPI(title="LLM Router API", version="0.1.0")
 
 app.add_middleware(
