@@ -448,3 +448,526 @@ main {
     font-size: 0.95rem;
     line-height: 1.6;
 }
+
+/* Routing Decision Styles */
+.routing-section {
+    margin-bottom: 1.25rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #eee;
+}
+
+.routing-section:last-child {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+.routing-section h4 {
+    font-size: 0.9rem;
+    color: #0066cc;
+    margin-bottom: 0.75rem;
+    font-weight: 600;
+}
+
+/* Models grid */
+.models-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+}
+
+.model-option {
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 0.75rem;
+    background-color: #fafafa;
+    transition: all 0.2s;
+}
+
+.model-option.selected {
+    border-color: #28a745;
+    background-color: #e8f5e9;
+    box-shadow: 0 2px 4px rgba(40, 167, 69, 0.2);
+}
+
+.model-option .model-tier {
+    font-weight: 700;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    color: #555;
+    margin-bottom: 0.25rem;
+}
+
+.model-option.selected .model-tier {
+    color: #28a745;
+}
+
+.model-option .model-name {
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: #0066cc;
+    margin-bottom: 0.25rem;
+}
+
+.model-option .model-desc {
+    font-size: 0.75rem;
+    color: #777;
+    line-height: 1.3;
+}
+
+/* Selection reasoning */
+.selection-reasoning {
+    background-color: #f0f7ff;
+    border-left: 4px solid #0066cc;
+    padding: 0.75rem 1rem;
+    border-radius: 0 6px 6px 0;
+    color: #333;
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+/* Complexity badges */
+.complexity-simple {
+    background-color: #e8f5e9;
+    color: #2e7d32;
+    padding: 0.125rem 0.5rem;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+.complexity-standard {
+    background-color: #e3f2fd;
+    color: #1565c0;
+    padding: 0.125rem 0.5rem;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+.complexity-complex {
+    background-color: #fce4ec;
+    color: #c2185b;
+    padding: 0.125rem 0.5rem;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+.complexity-code {
+    background-color: #fff3e0;
+    color: #e65100;
+    padding: 0.125rem 0.5rem;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+/* Step complexity badges */
+.step-complexity {
+    font-size: 0.7rem;
+    padding: 0.125rem 0.375rem;
+    border-radius: 3px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.step-model-label {
+    color: #666;
+    font-size: 0.8rem;
+}
+
+/* Enhanced step header for multi-step */
+.step-item-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.step-item-header .step-status {
+    margin-left: auto;
+}
+
+/* Classifier interaction display */
+.classifier-details {
+    margin-bottom: 1rem;
+}
+
+.detail-block {
+    margin-bottom: 0.75rem;
+}
+
+.detail-label {
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: #555;
+    margin-bottom: 0.25rem;
+}
+
+.classifier-prompt,
+.classifier-response {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.75rem;
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+    padding: 0.75rem;
+    border-radius: 6px;
+    max-height: 200px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.4;
+}
+
+.classifier-latency {
+    font-size: 0.8rem;
+    color: #28a745;
+    font-weight: 500;
+    margin-top: 0.5rem;
+}
+
+.classification-summary {
+    background-color: #f8f9fa;
+    padding: 0.75rem;
+    border-radius: 6px;
+    margin-top: 0.5rem;
+}
+
+/* Tournament block styles */
+.tournament-block {
+    margin-top: 1rem;
+    padding: 1rem;
+    background-color: #fafafa;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    max-width: 100%;
+    overflow: hidden;
+}
+
+.tournament-block h4 {
+    font-size: 0.9rem;
+    color: #0066cc;
+    margin-bottom: 0.75rem;
+    font-weight: 600;
+}
+
+.judge-block {
+    background-color: #f0f7ff;
+    border-left: 4px solid #0066cc;
+    padding: 0.75rem 1rem;
+    border-radius: 0 6px 6px 0;
+    margin-bottom: 1rem;
+    max-width: 100%;
+    overflow: hidden;
+}
+
+.judge-reasoning {
+    font-family: inherit;
+    font-size: 0.85rem;
+    background-color: #fff;
+    color: #333;
+    padding: 0.75rem;
+    border-radius: 4px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    max-width: 100%;
+    width: 100%;
+    overflow-x: hidden;
+    line-height: 1.5;
+    border: 1px solid #e0e0e0;
+    box-sizing: border-box;
+}
+
+.candidates-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.candidate-item {
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 0.75rem;
+    background-color: white;
+    max-width: 100%;
+    overflow: hidden;
+}
+
+.candidate-item.completed {
+    border-left: 4px solid #6c757d;
+}
+
+.candidate-item.failed {
+    border-left: 4px solid #dc3545;
+    background-color: #fff8f8;
+}
+
+.candidate-item.winner {
+    border-left: 4px solid #28a745;
+    background-color: #f0fff4;
+}
+
+.candidate-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.5rem;
+}
+
+.candidate-model {
+    font-family: monospace;
+    font-weight: 600;
+    color: #333;
+}
+
+.candidate-item.winner .candidate-model {
+    color: #28a745;
+}
+
+.candidate-latency,
+.candidate-tokens {
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: #666;
+    background-color: #f0f0f0;
+    padding: 0.125rem 0.5rem;
+    border-radius: 4px;
+}
+
+.candidate-error {
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: #dc3545;
+    background-color: #fff0f0;
+    padding: 0.5rem;
+    border-radius: 4px;
+    word-break: break-word;
+}
+
+.candidate-output {
+    font-family: monospace;
+    font-size: 0.8rem;
+    background-color: #f8f8f8;
+    padding: 0.75rem;
+    border-radius: 4px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    max-height: 150px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    max-width: 100%;
+    width: 100%;
+    line-height: 1.4;
+    box-sizing: border-box;
+}
+
+/* Multi-step final response blocks */
+.step-output-block {
+    margin-bottom: 1.5rem;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.step-output-block:last-child {
+    margin-bottom: 0;
+}
+
+.step-output-header {
+    background-color: #f0f0f0;
+    padding: 0.75rem 1rem;
+    font-weight: 600;
+    color: #333;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.step-output-block pre {
+    margin: 0;
+    padding: 1rem;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    max-height: 400px;
+    overflow-y: auto;
+    font-size: 0.9rem;
+    line-height: 1.6;
+}
+
+/* Action buttons for two-phase flow */
+.action-section {
+    background-color: #f0f7ff;
+    border: 2px solid #0066cc;
+    border-radius: 8px;
+    padding: 1rem;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 1rem;
+    margin-top: 0.75rem;
+}
+
+.action-btn {
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.action-btn.primary {
+    background-color: #0066cc;
+    color: white;
+}
+
+.action-btn.primary:hover {
+    background-color: #0052a3;
+}
+
+.action-btn.secondary {
+    background-color: #6c757d;
+    color: white;
+}
+
+.action-btn.secondary:hover {
+    background-color: #5a6268;
+}
+
+.action-btn:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+
+/* Model selection grid */
+.models-selection-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-top: 0.75rem;
+}
+
+.model-select-option {
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 1rem;
+    background-color: white;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.model-select-option:hover {
+    border-color: #0066cc;
+    background-color: #f8f9fa;
+}
+
+.model-select-option.selected {
+    border-color: #28a745;
+    background-color: #e8f5e9;
+    box-shadow: 0 2px 8px rgba(40, 167, 69, 0.2);
+}
+
+.model-select-name {
+    font-weight: 700;
+    font-size: 1rem;
+    color: #333;
+    margin-bottom: 0.5rem;
+}
+
+.model-select-option.selected .model-select-name {
+    color: #28a745;
+}
+
+.model-select-desc {
+    font-size: 0.85rem;
+    color: #666;
+    margin-bottom: 0.5rem;
+    line-height: 1.4;
+}
+
+.model-select-meta {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.model-economy,
+.model-responsiveness {
+    font-size: 0.7rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.model-economy {
+    background-color: #e8f5e9;
+    color: #2e7d32;
+}
+
+.model-responsiveness {
+    background-color: #e3f2fd;
+    color: #1565c0;
+}
+
+.auto-select-note {
+    margin-top: 0.75rem;
+    font-size: 0.85rem;
+    color: #666;
+    font-style: italic;
+    text-align: center;
+}
+
+/* Preference input */
+.preference-input {
+    width: 100%;
+    padding: 0.75rem;
+    font-size: 0.95rem;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    resize: vertical;
+    min-height: 60px;
+    font-family: inherit;
+    margin-top: 0.5rem;
+}
+
+.preference-input:focus {
+    outline: none;
+    border-color: #0066cc;
+    box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
+}
+
+.execute-actions {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+/* Loading state */
+.loading {
+    color: #666;
+    font-style: italic;
+    padding: 1rem;
+    text-align: center;
+}
+
+/* Collapsed section */
+.routing-section.collapsed {
+    opacity: 0.7;
+    padding: 0.75rem;
+}
+
+.routing-section.collapsed h4 {
+    margin-bottom: 0.25rem;
+}
+
+/* Winner highlight */
+.winner-highlight {
+    color: #28a745;
+    font-weight: 700;
+}

@@ -64,14 +64,14 @@ Simple endpoint for the frontend. Accepts a prompt string and returns the routed
 **Request:**
 ```json
 {
-  "prompt": "What is the capital of France?"
+  "prompt": "What is 2 + 2?"
 }
 ```
 
 **Response:**
 ```json
 {
-  "response": "The capital of France is Paris.",
+  "response": "2 + 2 = 4",
   "model": "openrouter/meta-llama/llama-3.1-8b-instruct",
   "plan_type": "single_shot",
   "usage": {"prompt_tokens": 20, "completion_tokens": 15, "total_tokens": 35}

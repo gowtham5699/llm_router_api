@@ -7,7 +7,17 @@ const executionDisplay = document.getElementById('execution-display');
 const responseDisplay = document.getElementById('response-display');
 const errorDisplay = document.getElementById('error-display');
 
-const API_BASE_URL = '/api';
+const API_BASE_URL = 'http://localhost:8000/api';
+
+// State management
+let currentState = {
+    phase: 'input', // 'input', 'classified', 'model-selection', 'executing', 'complete'
+    originalPrompt: '',
+    classification: null,
+    classifierInteraction: null,
+    availableModels: [],
+    selectedModelName: null,
+};
 
 function escapeHtml(text) {
     const div = document.createElement('div');
@@ -15,38 +25,6 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-function formatResponse(data) {
-    let html = '';
-
-    // Show routing metadata
-    html += '<div class="metadata">';
-    html += `<span class="badge model">${escapeHtml(data.model)}</span>`;
-    html += `<span class="badge plan-type">${escapeHtml(data.plan_type)}</span>`;
-    if (data.usage) {
-        html += `<span class="badge tokens">${data.usage.total_tokens || 0} tokens</span>`;
-    }
-    html += '</div>';
-
-    // Show steps for multi-step responses
-    if (data.steps && data.steps.length > 0) {
-        html += '<div class="steps">';
-        for (const step of data.steps) {
-            html += `<div class="step ${step.status}">`;
-            html += `<div class="step-header">Step ${step.step}: ${escapeHtml(step.task)}</div>`;
-            html += `<div class="step-output">${escapeHtml(step.output || 'No output')}</div>`;
-            html += '</div>';
-        }
-        html += '</div>';
-    } else {
-        // Single response
-        html += `<div class="response-content">${escapeHtml(data.response)}</div>`;
-    }
-
-    return html;
-}
-
-function setResponse(content, className = 'content') {
-    responseDisplay.innerHTML = `<p class="${className}">${content}</p>`;
 function formatLatency(ms) {
     if (ms < 1000) {
         return `${Math.round(ms)}ms`;
@@ -55,6 +33,7 @@ function formatLatency(ms) {
 }
 
 function extractModelName(fullModel) {
+    if (!fullModel) return 'unknown';
     const parts = fullModel.split('/');
     return parts[parts.length - 1];
 }
@@ -62,81 +41,418 @@ function extractModelName(fullModel) {
 function showError(message) {
     errorDisplay.textContent = message;
     errorDisplay.classList.remove('hidden');
-    executionFlow.classList.add('hidden');
 }
 
 function hideError() {
     errorDisplay.classList.add('hidden');
 }
 
-function setLoading(isLoading) {
+function setLoading(isLoading, message = 'Processing...') {
     submitBtn.disabled = isLoading;
-    if (isLoading) {
-        setResponse('Processing... (classifying query and selecting model)', 'loading');
-    submitBtn.textContent = isLoading ? 'Processing...' : 'Submit';
+    submitBtn.textContent = isLoading ? message : 'Submit';
 }
 
-function renderPromptStep(prompt) {
-    promptDisplay.innerHTML = `<p class="prompt-text">${escapeHtml(prompt)}</p>`;
+function resetState() {
+    currentState = {
+        phase: 'input',
+        originalPrompt: '',
+        classification: null,
+        classifierInteraction: null,
+        availableModels: [],
+        selectedModelName: null,
+    };
+    executionFlow.classList.add('hidden');
+    hideError();
 }
 
-function renderRoutingStep(data) {
-    const selection = data.selection;
-    const classification = data.metadata?.classification || {};
+// ============== PHASE 1: Classification ==============
 
-    let html = `
-        <div class="routing-info">
-            <div class="info-row">
-                <span class="label">Plan Type:</span>
-                <span class="value plan-type-${data.plan_type}">${data.plan_type.replace('_', ' ')}</span>
+function renderClassifierInteraction() {
+    const interaction = currentState.classifierInteraction;
+    const classification = currentState.classification;
+
+    let html = '<div class="routing-info">';
+
+    // Classifier Interaction
+    html += `
+        <div class="routing-section">
+            <h4>1. Classifier Interaction (gpt-4o-mini)</h4>
+            <div class="classifier-details">
+                <div class="detail-block">
+                    <div class="detail-label">Prompt Sent to Classifier:</div>
+                    <pre class="classifier-prompt">${escapeHtml(interaction.prompt_sent)}</pre>
+                </div>
+                <div class="detail-block">
+                    <div class="detail-label">Raw Classifier Response:</div>
+                    <pre class="classifier-response">${escapeHtml(JSON.stringify(interaction.raw_response, null, 2))}</pre>
+                </div>
+                ${interaction.latency_ms ? `<div class="classifier-latency">Classification took ${formatLatency(interaction.latency_ms)}</div>` : ''}
             </div>
-            <div class="info-row">
-                <span class="label">Selected Model:</span>
-                <span class="value model-name">${extractModelName(selection.model)}</span>
+            <div class="classification-summary">
+                <div class="info-row">
+                    <span class="label">Plan Type:</span>
+                    <span class="value">${classification.plan_type || 'single_shot'}</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Confidence:</span>
+                    <span class="value">${Math.round((classification.confidence || 0.7) * 100)}%</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Reasoning:</span>
+                    <span class="value reasoning">${escapeHtml(classification.reasoning || '')}</span>
+                </div>
             </div>
-            <div class="info-row">
-                <span class="label">Provider:</span>
-                <span class="value">${selection.provider}</span>
-            </div>
+        </div>
     `;
 
-    if (selection.reasoning) {
-        html += `
-            <div class="info-row">
-                <span class="label">Reasoning:</span>
-                <span class="value reasoning">${escapeHtml(selection.reasoning)}</span>
+    // Action buttons
+    html += `
+        <div class="routing-section action-section">
+            <h4>2. Choose Execution Mode</h4>
+            <div class="action-buttons">
+                <button id="select-model-btn" class="action-btn primary">Select a Model</button>
+                <button id="tournament-btn" class="action-btn secondary">Tournament Mode</button>
             </div>
-        `;
-    }
-
-    if (selection.confidence !== null && selection.confidence !== undefined) {
-        const confidencePercent = Math.round(selection.confidence * 100);
-        html += `
-            <div class="info-row">
-                <span class="label">Confidence:</span>
-                <span class="value">${confidencePercent}%</span>
-            </div>
-        `;
-    }
-
-    if (classification.reasoning) {
-        html += `
-            <div class="info-row">
-                <span class="label">Classification:</span>
-                <span class="value reasoning">${escapeHtml(classification.reasoning)}</span>
-            </div>
-        `;
-    }
+        </div>
+    `;
 
     html += '</div>';
     routingDisplay.innerHTML = html;
+
+    // Add event listeners
+    document.getElementById('select-model-btn').addEventListener('click', showModelSelection);
+    document.getElementById('tournament-btn').addEventListener('click', runTournamentMode);
+}
+
+async function classifyPrompt() {
+    const prompt = promptInput.value.trim();
+
+    if (!prompt) {
+        showError('Please enter a prompt.');
+        return;
+    }
+
+    currentState.originalPrompt = prompt;
+    setLoading(true, 'Classifying...');
+    hideError();
+    executionFlow.classList.remove('hidden');
+
+    // Show prompt
+    promptDisplay.innerHTML = `<p class="prompt-text">${escapeHtml(prompt)}</p>`;
+    routingDisplay.innerHTML = '<p class="loading">Classifying prompt...</p>';
+    executionDisplay.innerHTML = '';
+    responseDisplay.innerHTML = '';
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/classify`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt }),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || `HTTP error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('Classification result:', data);
+
+        currentState.phase = 'classified';
+        currentState.classification = data.classification;
+        currentState.classifierInteraction = data.classifier_interaction;
+        currentState.availableModels = data.available_models;
+
+        renderClassifierInteraction();
+    } catch (error) {
+        console.error('Classification error:', error);
+        showError(`Error: ${error.message}`);
+    } finally {
+        setLoading(false);
+    }
+}
+
+// ============== PHASE 2A: Select a Model ==============
+
+function showModelSelection() {
+    currentState.phase = 'model-selection';
+
+    let html = '<div class="routing-info">';
+
+    // Show classifier summary (collapsed)
+    html += `
+        <div class="routing-section collapsed">
+            <h4>1. Classification Complete</h4>
+            <div class="classification-summary">
+                <div class="info-row">
+                    <span class="label">Plan Type:</span>
+                    <span class="value">${currentState.classification.plan_type || 'single_shot'}</span>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Model selection
+    html += `
+        <div class="routing-section">
+            <h4>2. Select a Model</h4>
+            <div class="models-selection-grid">
+    `;
+
+    for (const model of currentState.availableModels) {
+        html += `
+            <div class="model-select-option" data-model="${escapeHtml(model.name)}">
+                <div class="model-select-name">${escapeHtml(model.name)}</div>
+                <div class="model-select-desc">${escapeHtml(model.description)}</div>
+                <div class="model-select-meta">
+                    <span class="model-economy">${escapeHtml(model.economy)}</span>
+                    <span class="model-responsiveness">${escapeHtml(model.responsiveness)}</span>
+                </div>
+            </div>
+        `;
+    }
+
+    html += `
+            </div>
+            <div class="auto-select-note">
+                Or leave unselected for automatic semantic selection
+            </div>
+        </div>
+    `;
+
+    // Second prompt input
+    html += `
+        <div class="routing-section">
+            <h4>3. Additional Preferences (Optional)</h4>
+            <textarea id="preference-input" class="preference-input" placeholder="Describe any preferences for model selection (e.g., 'prefer fast response', 'need high accuracy', 'budget friendly')..."></textarea>
+            <div class="execute-actions">
+                <button id="execute-selected-btn" class="action-btn primary">Execute</button>
+                <button id="back-btn" class="action-btn secondary">Back</button>
+            </div>
+        </div>
+    `;
+
+    html += '</div>';
+    routingDisplay.innerHTML = html;
+
+    // Add event listeners for model selection
+    document.querySelectorAll('.model-select-option').forEach(el => {
+        el.addEventListener('click', () => {
+            document.querySelectorAll('.model-select-option').forEach(opt => opt.classList.remove('selected'));
+            el.classList.add('selected');
+            currentState.selectedModelName = el.dataset.model;
+        });
+    });
+
+    document.getElementById('execute-selected-btn').addEventListener('click', executeWithSelectedModel);
+    document.getElementById('back-btn').addEventListener('click', () => {
+        currentState.phase = 'classified';
+        currentState.selectedModelName = null;
+        renderClassifierInteraction();
+    });
+}
+
+async function executeWithSelectedModel() {
+    const preference = document.getElementById('preference-input')?.value || '';
+
+    setLoading(true, 'Executing...');
+    executionDisplay.innerHTML = '<p class="loading">Selecting model and executing...</p>';
+    responseDisplay.innerHTML = '';
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/select-model`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                original_prompt: currentState.originalPrompt,
+                selected_model_name: currentState.selectedModelName,
+                user_preference: preference,
+                classification: currentState.classification,
+            }),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || `HTTP error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('Execution result:', data);
+
+        currentState.phase = 'complete';
+        renderExecutionResult(data);
+    } catch (error) {
+        console.error('Execution error:', error);
+        showError(`Error: ${error.message}`);
+    } finally {
+        setLoading(false);
+    }
+}
+
+// ============== PHASE 2B: Tournament Mode ==============
+
+async function runTournamentMode() {
+    setLoading(true, 'Running tournament...');
+    executionDisplay.innerHTML = '<p class="loading">Running tournament across all models...</p>';
+    responseDisplay.innerHTML = '';
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/route`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                messages: [{ role: 'user', content: currentState.originalPrompt }],
+                tournament: true,
+                tournament_per_step: true,
+                judge_model: 'gpt-4o-mini',
+            }),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || `HTTP error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('Tournament result:', data);
+
+        currentState.phase = 'complete';
+        renderExecutionResult(data);
+    } catch (error) {
+        console.error('Tournament error:', error);
+        showError(`Error: ${error.message}`);
+    } finally {
+        setLoading(false);
+    }
+}
+
+// ============== Execution Result Rendering ==============
+
+function renderExecutionResult(data) {
+    // Update routing display with final selection info
+    let routingHtml = '<div class="routing-info">';
+
+    // Classification summary
+    routingHtml += `
+        <div class="routing-section">
+            <h4>1. Classification</h4>
+            <div class="classification-summary">
+                <div class="info-row">
+                    <span class="label">Plan Type:</span>
+                    <span class="value">${data.plan_type}</span>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Model selection
+    routingHtml += `
+        <div class="routing-section">
+            <h4>2. Model Selection</h4>
+            <div class="info-row">
+                <span class="label">Selected Model:</span>
+                <span class="value model-name">${extractModelName(data.selection.model)}</span>
+            </div>
+            ${data.selection.reasoning ? `
+            <div class="info-row">
+                <span class="label">Reasoning:</span>
+                <span class="value reasoning">${escapeHtml(data.selection.reasoning)}</span>
+            </div>
+            ` : ''}
+        </div>
+    `;
+
+    // Semantic selection details (if available)
+    if (data.metadata?.semantic_selection) {
+        const ss = data.metadata.semantic_selection;
+        routingHtml += `
+            <div class="routing-section">
+                <h4>3. Semantic Selection Details</h4>
+                <div class="info-row">
+                    <span class="label">Method:</span>
+                    <span class="value">${escapeHtml(ss.method)}</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Selected:</span>
+                    <span class="value">${escapeHtml(ss.selected_model)}</span>
+                </div>
+                ${ss.raw_response ? `
+                <div class="detail-block">
+                    <div class="detail-label">Selector Response:</div>
+                    <pre class="classifier-response">${escapeHtml(JSON.stringify(ss.raw_response, null, 2))}</pre>
+                </div>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    // Tournament results (if available)
+    if (data.tournament) {
+        routingHtml += renderTournamentSection(data.tournament);
+    }
+
+    routingHtml += '</div>';
+    routingDisplay.innerHTML = routingHtml;
+
+    // Render execution
+    renderExecutionStep(data);
+
+    // Render response
+    renderResponseStep(data);
+}
+
+function renderTournamentSection(tournament) {
+    const judge = tournament.judge;
+    const winnerModel = judge?.winner_model;
+
+    let html = `
+        <div class="routing-section">
+            <h4>Tournament Results</h4>
+    `;
+
+    if (judge) {
+        html += `
+            <div class="judge-block">
+                <div class="info-row">
+                    <span class="label">Judge:</span>
+                    <span class="value">${escapeHtml(extractModelName(judge.model))}</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Winner:</span>
+                    <span class="value winner-highlight">${escapeHtml(extractModelName(judge.winner_model))}</span>
+                </div>
+                <div class="detail-block">
+                    <div class="detail-label">Judge Reasoning:</div>
+                    <pre class="judge-reasoning">${escapeHtml(judge.reasoning || '')}</pre>
+                </div>
+            </div>
+        `;
+    }
+
+    html += '<div class="candidates-list">';
+    for (const c of tournament.candidates || []) {
+        const isWinner = winnerModel && c.model === winnerModel;
+        const status = c.error ? 'failed' : 'completed';
+        html += `
+            <div class="candidate-item ${status} ${isWinner ? 'winner' : ''}">
+                <div class="candidate-header">
+                    <span class="candidate-model">${escapeHtml(extractModelName(c.model))}${isWinner ? ' ✓ WINNER' : ''}</span>
+                    ${c.latency_ms ? `<span class="candidate-latency">${formatLatency(c.latency_ms)}</span>` : ''}
+                    ${c.usage?.total_tokens ? `<span class="candidate-tokens">${c.usage.total_tokens} tokens</span>` : ''}
+                </div>
+                ${c.error ? `<div class="candidate-error">${escapeHtml(c.error)}</div>` : `<pre class="candidate-output">${escapeHtml(c.content || '')}</pre>`}
+            </div>
+        `;
+    }
+    html += '</div></div>';
+
+    return html;
 }
 
 function renderExecutionStep(data) {
     const metadata = data.metadata || {};
 
     if (data.plan_type === 'single_shot') {
-        const latency = metadata.latency_ms;
         let html = `
             <div class="execution-single">
                 <div class="info-row">
@@ -145,11 +461,11 @@ function renderExecutionStep(data) {
                 </div>
         `;
 
-        if (latency) {
+        if (metadata.latency_ms) {
             html += `
                 <div class="info-row">
                     <span class="label">Latency:</span>
-                    <span class="value latency">${formatLatency(latency)}</span>
+                    <span class="value latency">${formatLatency(metadata.latency_ms)}</span>
                 </div>
             `;
         }
@@ -171,7 +487,7 @@ function renderExecutionStep(data) {
             <div class="execution-multi">
                 <div class="info-row">
                     <span class="label">Execution Type:</span>
-                    <span class="value">Multi-Step (${data.steps.length} steps)</span>
+                    <span class="value">Multi-Step (${data.steps?.length || 0} steps)</span>
                 </div>
         `;
 
@@ -186,7 +502,7 @@ function renderExecutionStep(data) {
 
         html += '<div class="steps-list">';
 
-        for (const step of data.steps) {
+        for (const step of data.steps || []) {
             const stepLatency = metadata.step_latencies_ms?.[step.step_number];
             const statusClass = step.status === 'completed' ? 'success' : step.status === 'failed' ? 'failed' : 'pending';
 
@@ -198,20 +514,12 @@ function renderExecutionStep(data) {
                     </div>
                     <div class="step-item-task">${escapeHtml(step.task)}</div>
                     <div class="step-item-meta">
+                        <span class="step-model-label">Model:</span>
                         <span class="step-model">${extractModelName(step.model)}</span>
+                        ${stepLatency ? `<span class="step-latency">${formatLatency(stepLatency)}</span>` : ''}
+                    </div>
+                </div>
             `;
-
-            if (stepLatency) {
-                html += `<span class="step-latency">${formatLatency(stepLatency)}</span>`;
-            }
-
-            html += '</div>';
-
-            if (step.output) {
-                html += `<div class="step-item-output"><pre>${escapeHtml(step.output)}</pre></div>`;
-            }
-
-            html += '</div>';
         }
 
         html += '</div></div>';
@@ -225,16 +533,19 @@ function renderResponseStep(data) {
     if (data.plan_type === 'single_shot' && data.content) {
         html = `<div class="final-response"><pre>${escapeHtml(data.content)}</pre></div>`;
     } else if (data.steps && data.steps.length > 0) {
-        // For multi-step, show the final step's output as the response
         const completedSteps = data.steps.filter(s => s.status === 'completed');
         if (completedSteps.length > 0) {
-            const lastStep = completedSteps[completedSteps.length - 1];
-            html = `
-                <div class="final-response">
-                    <p class="response-note">Final output from Step ${lastStep.step_number}:</p>
-                    <pre>${escapeHtml(lastStep.output || 'No output')}</pre>
-                </div>
-            `;
+            html = '<div class="final-response">';
+            html += `<p class="response-note">Output from ${completedSteps.length} step(s):</p>`;
+            for (const step of completedSteps) {
+                html += `
+                    <div class="step-output-block">
+                        <div class="step-output-header">Step ${step.step_number}: ${escapeHtml(step.task)}</div>
+                        <pre>${escapeHtml(step.output || 'No output')}</pre>
+                    </div>
+                `;
+            }
+            html += '</div>';
         } else {
             html = '<p class="no-response">No completed steps</p>';
         }
@@ -245,59 +556,12 @@ function renderResponseStep(data) {
     responseDisplay.innerHTML = html;
 }
 
-function renderExecutionFlow(prompt, data) {
-    hideError();
-    executionFlow.classList.remove('hidden');
+// ============== Event Listeners ==============
 
-    renderPromptStep(prompt);
-    renderRoutingStep(data);
-    renderExecutionStep(data);
-    renderResponseStep(data);
-}
-
-async function submitPrompt() {
-    const prompt = promptInput.value.trim();
-
-    if (!prompt) {
-        showError('Please enter a prompt.');
-        return;
-    }
-
-    setLoading(true);
-    hideError();
-    executionFlow.classList.add('hidden');
-
-    try {
-        const response = await fetch(`${API_BASE_URL}/route`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                messages: [
-                    { role: 'user', content: prompt }
-                ]
-            }),
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.detail || `HTTP error: ${response.status}`);
-        }
-
-        const data = await response.json();
-        responseDisplay.innerHTML = formatResponse(data);
-    } catch (error) {
-        showError(`Error: ${error.message}`);
-    } finally {
-        setLoading(false);
-    }
-}
-
-submitBtn.addEventListener('click', submitPrompt);
+submitBtn.addEventListener('click', classifyPrompt);
 
 promptInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' && event.ctrlKey) {
-        submitPrompt();
+        classifyPrompt();
     }
 });

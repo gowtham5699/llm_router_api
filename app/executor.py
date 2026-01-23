@@ -4,6 +4,7 @@ Handles single-shot and sequential multi-step execution with context passing.
 Tracks latency and aggregates responses.
 """
 
+import json
 import time
 from typing import Any
 
@@ -11,11 +12,14 @@ import litellm
 
 from app.config import settings
 from app.models.schemas import (
+    CandidateResponse,
+    JudgeResult,
     Message,
     PlanType,
     RouteResponse,
     SelectionResult,
     Step,
+    TournamentResult,
 )
 
 
@@ -76,8 +80,8 @@ class Executor:
 
         if temperature is not None:
             call_params["temperature"] = temperature
-        if max_tokens is not None:
-            call_params["max_tokens"] = max_tokens
+        # Default to 1000 tokens to avoid credit issues
+        call_params["max_tokens"] = max_tokens if max_tokens is not None else 1000
 
         response = await litellm.acompletion(**call_params)
 
@@ -100,6 +104,123 @@ class Executor:
             usage=usage,
             model=model,
         )
+
+    def _provider_for_model(self, model: str) -> str:
+        if model.startswith("openrouter/"):
+            return "openrouter"
+        if model.startswith("gpt-") or model.startswith("o1-"):
+            return "openai"
+        return "unknown"
+
+    def _api_key_for_model(self, model: str) -> str | None:
+        provider = self._provider_for_model(model)
+        if provider == "openrouter":
+            return self.api_key
+        if provider == "openai":
+            return settings.openai_api_key
+        return None
+
+    async def run_tournament(
+        self,
+        messages: list[dict[str, str]],
+        candidate_models: list[str],
+        judge_model: str,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> tuple[str | None, TournamentResult]:
+        candidates: list[CandidateResponse] = []
+
+        for model in candidate_models:
+            try:
+                result = await self._execute_call(
+                    messages=messages,
+                    model=model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                candidates.append(
+                    CandidateResponse(
+                        provider=self._provider_for_model(model),
+                        model=model,
+                        content=result.content,
+                        latency_ms=result.latency_ms,
+                        usage=result.usage,
+                        error=None,
+                    )
+                )
+            except Exception as e:
+                candidates.append(
+                    CandidateResponse(
+                        provider=self._provider_for_model(model),
+                        model=model,
+                        content=None,
+                        latency_ms=None,
+                        usage=None,
+                        error=str(e),
+                    )
+                )
+
+        judge: JudgeResult | None = None
+        winner_model: str | None = None
+
+        # Judge only among successful candidates
+        judge_candidates = [c for c in candidates if c.content is not None]
+        if judge_candidates:
+            judge_api_key = self._api_key_for_model(judge_model)
+            if not judge_api_key:
+                # If we can't call judge model, pick first successful candidate deterministically
+                winner_model = judge_candidates[0].model
+            else:
+                prompt_parts = [
+                    "You are judging responses from multiple LLMs.",
+                    "Pick the single best response for the USER based on: correctness, completeness, clarity, following instructions, and formatting.",
+                    "",
+                    "IMPORTANT COST-AWARE RULE:",
+                    "- Models are listed in order from CHEAPEST to MOST EXPENSIVE.",
+                    "- If multiple responses are correct and similarly clear, PREFER the cheaper model (earlier in the list).",
+                    "- Do NOT reward unnecessary verbosity, emojis, or extra friendliness unless the user explicitly asked for it.",
+                    "- A concise correct answer from a cheap model should beat a verbose correct answer from an expensive model.",
+                    "",
+                    "Respond ONLY as valid JSON with keys: winner_model (string), reasoning (string), scores (object mapping model->0-10).",
+                    "\nCANDIDATE RESPONSES (ordered cheapest to most expensive):",
+                ]
+                for idx, c in enumerate(judge_candidates, start=1):
+                    prompt_parts.append(
+                        f"\n[{idx}] MODEL: {c.model}\nRESPONSE:\n{c.content}\n"
+                    )
+                judge_prompt = "\n".join(prompt_parts)
+
+                try:
+                    judge_resp = await litellm.acompletion(
+                        model=judge_model,
+                        api_key=judge_api_key,
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": "You are a strict JSON-only evaluator.",
+                            },
+                            {"role": "user", "content": judge_prompt},
+                        ],
+                        temperature=0.0,
+                        max_tokens=700,
+                        response_format={"type": "json_object"},
+                    )
+                    raw = judge_resp.choices[0].message.content or "{}"
+                    parsed = json.loads(raw)
+                    winner_model = parsed.get("winner_model")
+                    if winner_model not in {c.model for c in judge_candidates}:
+                        winner_model = judge_candidates[0].model
+                    judge = JudgeResult(
+                        model=judge_model,
+                        winner_model=winner_model,
+                        reasoning=str(parsed.get("reasoning") or ""),
+                        scores=parsed.get("scores") if isinstance(parsed.get("scores"), dict) else None,
+                    )
+                except Exception:
+                    winner_model = judge_candidates[0].model
+
+        tournament = TournamentResult(candidates=candidates, judge=judge)
+        return winner_model, tournament
 
     async def execute_single_shot(
         self,
@@ -147,6 +268,9 @@ class Executor:
         selection: SelectionResult,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        tournament_per_step: bool = False,
+        candidate_models: list[str] | None = None,
+        judge_model: str = "gpt-4o-mini",
     ) -> RouteResponse:
         """Execute a multi-step plan sequentially with context passing.
 
@@ -171,6 +295,7 @@ class Executor:
             "total_tokens": 0,
         }
         step_latencies: dict[int, float] = {}
+        step_tournaments: dict[int, TournamentResult] = {}
 
         # Sort steps by step_number to ensure correct order
         sorted_steps = sorted(steps, key=lambda s: s.step_number)
@@ -214,23 +339,63 @@ class Executor:
             step.status = "running"
 
             try:
-                result = await self._execute_call(
-                    messages=step_messages,
-                    model=model,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                )
+                if tournament_per_step and candidate_models:
+                    # Put the "recommended" model first for deterministic tie-breaking
+                    step_candidates = [model] + [m for m in candidate_models if m != model]
+                    winner, tournament = await self.run_tournament(
+                        messages=step_messages,
+                        candidate_models=step_candidates,
+                        judge_model=judge_model,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    )
+                    step_tournaments[step.step_number] = tournament
+                    model = winner or model
+                    step.model = model
 
-                # Update step with results
-                step.output = result.content
-                step.status = "completed"
-                step_outputs[step.step_number] = result.content
-                step_latencies[step.step_number] = result.latency_ms
-
-                # Aggregate usage
-                if result.usage:
-                    for key in total_usage:
-                        total_usage[key] += result.usage.get(key, 0)
+                    # Use the winner's content from tournament instead of making duplicate call
+                    winner_candidate = next(
+                        (c for c in tournament.candidates if c.model == model and c.content),
+                        None
+                    )
+                    if winner_candidate:
+                        step.output = winner_candidate.content
+                        step.status = "completed"
+                        step_outputs[step.step_number] = winner_candidate.content
+                        step_latencies[step.step_number] = winner_candidate.latency_ms or 0.0
+                        if winner_candidate.usage:
+                            for key in total_usage:
+                                total_usage[key] += winner_candidate.usage.get(key, 0)
+                    else:
+                        # Fallback: make a fresh call if winner content not found
+                        result = await self._execute_call(
+                            messages=step_messages,
+                            model=model,
+                            temperature=temperature,
+                            max_tokens=max_tokens,
+                        )
+                        step.output = result.content
+                        step.status = "completed"
+                        step_outputs[step.step_number] = result.content
+                        step_latencies[step.step_number] = result.latency_ms
+                        if result.usage:
+                            for key in total_usage:
+                                total_usage[key] += result.usage.get(key, 0)
+                else:
+                    # No tournament - make normal call
+                    result = await self._execute_call(
+                        messages=step_messages,
+                        model=model,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    )
+                    step.output = result.content
+                    step.status = "completed"
+                    step_outputs[step.step_number] = result.content
+                    step_latencies[step.step_number] = result.latency_ms
+                    if result.usage:
+                        for key in total_usage:
+                            total_usage[key] += result.usage.get(key, 0)
 
             except Exception as e:
                 step.status = "failed"
@@ -248,6 +413,7 @@ class Executor:
             content=None,
             steps=executed_steps,
             usage=total_usage if any(total_usage.values()) else None,
+            step_tournaments=step_tournaments if step_tournaments else None,
             metadata={
                 "total_latency_ms": total_latency,
                 "step_latencies_ms": step_latencies,
@@ -264,6 +430,9 @@ class Executor:
         steps: list[Step] | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        tournament_per_step: bool = False,
+        candidate_models: list[str] | None = None,
+        judge_model: str = "gpt-4o-mini",
     ) -> RouteResponse:
         """Execute a routing plan.
 
@@ -296,6 +465,9 @@ class Executor:
                 selection=selection,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                tournament_per_step=tournament_per_step,
+                candidate_models=candidate_models,
+                judge_model=judge_model,
             )
 
 
@@ -304,7 +476,7 @@ _executor_instance: Executor | None = None
 
 
 def get_executor() -> Executor:
-    """Get or create the singleton Executor instance."""
+    """Singleton Executor instance."""
     global _executor_instance
     if _executor_instance is None:
         _executor_instance = Executor()
