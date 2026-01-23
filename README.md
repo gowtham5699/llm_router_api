@@ -4,14 +4,12 @@ An intelligent LLM routing system that automatically classifies queries and sele
 
 ## Features
 
-- **Intelligent Query Classification**: Automatically analyzes prompts to determine complexity (simple, standard, complex, code)
+- **Intelligent Query Classification**: Automatically analyzes prompts to determine complexity (simple, complex)
 - **Cost-Optimized Routing**: Routes simple queries to cheaper models, complex queries to more capable models
 - **Multi-Step Execution**: Supports breaking down complex tasks into sequential steps with dependency tracking
 - **Model Tiers**:
   - Simple queries -> Llama 3.1 8B (fast, economical)
-  - Standard queries -> Claude 3.5 Sonnet (balanced)
   - Complex queries -> Claude 3 Opus (most capable)
-  - Code queries -> DeepSeek Coder (specialized)
 
 ## Setup
 

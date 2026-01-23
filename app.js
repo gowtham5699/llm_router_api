@@ -176,6 +176,10 @@ async function classifyPrompt() {
 
 function showModelSelection() {
     currentState.phase = 'model-selection';
+    const isMultiStep = currentState.classification.plan_type === 'multi_step';
+    const steps = currentState.classification.steps || [];
+    
+    console.log('showModelSelection - isMultiStep:', isMultiStep, 'steps:', steps);
 
     let html = '<div class="routing-info">';
 
@@ -192,39 +196,115 @@ function showModelSelection() {
         </div>
     `;
 
-    // Model selection
-    html += `
-        <div class="routing-section">
-            <h4>2. Select a Model</h4>
-            <div class="models-selection-grid">
-    `;
-
-    for (const model of currentState.availableModels) {
-        html += `
-            <div class="model-select-option" data-model="${escapeHtml(model.name)}">
-                <div class="model-select-name">${escapeHtml(model.name)}</div>
-                <div class="model-select-desc">${escapeHtml(model.description)}</div>
-                <div class="model-select-meta">
-                    <span class="model-economy">${escapeHtml(model.economy)}</span>
-                    <span class="model-responsiveness">${escapeHtml(model.responsiveness)}</span>
+    if (isMultiStep) {
+        // Multi-step: Show per-step model selection
+        if (steps.length === 0) {
+            // Classifier said multi-step but didn't provide steps - show warning
+            html += `
+                <div class="routing-section">
+                    <h4>2. Multi-Step Execution</h4>
+                    <p class="section-note warning">Classifier detected multi-step but no steps were defined. Using single model for all steps.</p>
+                    <div class="models-selection-grid">
+            `;
+            for (const model of currentState.availableModels) {
+                html += `
+                    <div class="model-select-option" data-model="${escapeHtml(model.name)}">
+                        <div class="model-select-name">${escapeHtml(model.name)}</div>
+                        <div class="model-select-desc">${escapeHtml(model.description)}</div>
+                        <div class="model-select-meta">
+                            <span class="model-economy">${escapeHtml(model.economy)}</span>
+                        </div>
+                    </div>
+                `;
+            }
+            html += `
+                    </div>
+                    <textarea id="preference-input" class="preference-input" placeholder="Describe any preferences..."></textarea>
                 </div>
+            `;
+        } else {
+            html += `
+                <div class="routing-section">
+                    <h4>2. Configure Each Step</h4>
+                    <p class="section-note">Select a model and optionally add preferences for each step:</p>
+                    <div class="steps-config-list">
+            `;
+
+        for (const step of steps) {
+            html += `
+                <div class="step-config-item" data-step="${step.step_number}">
+                    <div class="step-config-header">
+                        <span class="step-config-number">Step ${step.step_number}</span>
+                        <span class="step-config-task">${escapeHtml(step.task)}</span>
+                    </div>
+                    <div class="step-config-body">
+                        <div class="step-model-select">
+                            <label>Model:</label>
+                            <select class="step-model-dropdown" data-step="${step.step_number}">
+                                <option value="">Auto-select (semantic)</option>
+            `;
+            for (const model of currentState.availableModels) {
+                html += `<option value="${escapeHtml(model.name)}">${escapeHtml(model.name)}</option>`;
+            }
+            html += `
+                            </select>
+                        </div>
+                        <div class="step-preference-input">
+                            <label>Preference:</label>
+                            <input type="text" class="step-preference" data-step="${step.step_number}" 
+                                   placeholder="e.g., 'fast response', 'detailed output'...">
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        html += `
+                </div>
+            </div>
+        `;
+        }  // Close the else block for steps.length > 0
+    } else {
+        // Single-shot: Show single model selection
+        html += `
+            <div class="routing-section">
+                <h4>2. Select a Model</h4>
+                <div class="models-selection-grid">
+        `;
+
+        for (const model of currentState.availableModels) {
+            html += `
+                <div class="model-select-option" data-model="${escapeHtml(model.name)}">
+                    <div class="model-select-name">${escapeHtml(model.name)}</div>
+                    <div class="model-select-desc">${escapeHtml(model.description)}</div>
+                    <div class="model-select-meta">
+                        <span class="model-economy">${escapeHtml(model.economy)}</span>
+                        <span class="model-responsiveness">${escapeHtml(model.responsiveness || model.latency || '')}</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        html += `
+                </div>
+                <div class="auto-select-note">
+                    Or leave unselected for automatic semantic selection
+                </div>
+            </div>
+        `;
+
+        // Second prompt input for single-shot
+        html += `
+            <div class="routing-section">
+                <h4>3. Additional Preferences (Optional)</h4>
+                <textarea id="preference-input" class="preference-input" placeholder="Describe any preferences for model selection (e.g., 'prefer fast response', 'need high accuracy', 'budget friendly')..."></textarea>
             </div>
         `;
     }
 
-    html += `
-            </div>
-            <div class="auto-select-note">
-                Or leave unselected for automatic semantic selection
-            </div>
-        </div>
-    `;
-
-    // Second prompt input
+    // Execute buttons
     html += `
         <div class="routing-section">
-            <h4>3. Additional Preferences (Optional)</h4>
-            <textarea id="preference-input" class="preference-input" placeholder="Describe any preferences for model selection (e.g., 'prefer fast response', 'need high accuracy', 'budget friendly')..."></textarea>
             <div class="execute-actions">
                 <button id="execute-selected-btn" class="action-btn primary">Execute</button>
                 <button id="back-btn" class="action-btn secondary">Back</button>
@@ -235,14 +315,16 @@ function showModelSelection() {
     html += '</div>';
     routingDisplay.innerHTML = html;
 
-    // Add event listeners for model selection
-    document.querySelectorAll('.model-select-option').forEach(el => {
-        el.addEventListener('click', () => {
-            document.querySelectorAll('.model-select-option').forEach(opt => opt.classList.remove('selected'));
-            el.classList.add('selected');
-            currentState.selectedModelName = el.dataset.model;
+    // Add event listeners for model selection (single-shot or multi-step without steps)
+    if (!isMultiStep || steps.length === 0) {
+        document.querySelectorAll('.model-select-option').forEach(el => {
+            el.addEventListener('click', () => {
+                document.querySelectorAll('.model-select-option').forEach(opt => opt.classList.remove('selected'));
+                el.classList.add('selected');
+                currentState.selectedModelName = el.dataset.model;
+            });
         });
-    });
+    }
 
     document.getElementById('execute-selected-btn').addEventListener('click', executeWithSelectedModel);
     document.getElementById('back-btn').addEventListener('click', () => {
@@ -253,7 +335,35 @@ function showModelSelection() {
 }
 
 async function executeWithSelectedModel() {
-    const preference = document.getElementById('preference-input')?.value || '';
+    const isMultiStep = currentState.classification.plan_type === 'multi_step';
+    const steps = currentState.classification.steps || [];
+    
+    let requestBody = {
+        original_prompt: currentState.originalPrompt,
+        classification: currentState.classification,
+    };
+
+    if (isMultiStep && steps.length > 0) {
+        // Collect per-step selections
+        const stepSelections = [];
+        for (const step of steps) {
+            const stepNum = step.step_number;
+            const modelDropdown = document.querySelector(`.step-model-dropdown[data-step="${stepNum}"]`);
+            const preferenceInput = document.querySelector(`.step-preference[data-step="${stepNum}"]`);
+            
+            stepSelections.push({
+                step_number: stepNum,
+                selected_model_name: modelDropdown?.value || null,
+                user_preference: preferenceInput?.value || '',
+            });
+        }
+        requestBody.step_selections = stepSelections;
+    } else {
+        // Single-shot: use global selection
+        const preference = document.getElementById('preference-input')?.value || '';
+        requestBody.selected_model_name = currentState.selectedModelName;
+        requestBody.user_preference = preference;
+    }
 
     setLoading(true, 'Executing...');
     executionDisplay.innerHTML = '<p class="loading">Selecting model and executing...</p>';
@@ -263,12 +373,7 @@ async function executeWithSelectedModel() {
         const response = await fetch(`${API_BASE_URL}/select-model`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                original_prompt: currentState.originalPrompt,
-                selected_model_name: currentState.selectedModelName,
-                user_preference: preference,
-                classification: currentState.classification,
-            }),
+            body: JSON.stringify(requestBody),
         });
 
         if (!response.ok) {

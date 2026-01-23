@@ -29,39 +29,41 @@ AVAILABLE_MODELS = {
     "llama-3.1-8b": {
         "provider": "openrouter",
         "model": "openrouter/meta-llama/llama-3.1-8b-instruct",
-        "description": "Fast, efficient for simple tasks",
+        "description": "Meta's latest class of model (Llama 3.1) launched with a variety of sizes & flavors. This 8B instruct-tuned version is fast and efficient. It has demonstrated strong performance compared to leading closed-source models in human evaluations.",
         "economy": "cheap",
-        "responsiveness": "fast",
+        "latency": "0.61s",
+        "throughput": "17tps"
     },
     "nemotron-nano-9b": {
         "provider": "openrouter",
         "model": "openrouter/nvidia/nemotron-nano-9b-v2:free",
-        "description": "Balanced performance and capability",
+        "description": "NVIDIA-Nemotron-Nano-9B-v2 is a large language model (LLM) trained from scratch by NVIDIA, and designed as a unified model for both reasoning and non-reasoning tasks. It responds to user queries and tasks by first generating a reasoning trace and then concluding with a final response. The model's reasoning capabilities can be controlled via a system prompt. If the user prefers the model to provide its final answer without intermediate reasoning traces, it can be configured to do so.",
         "economy": "free",
-        "responsiveness": "medium",
+        "latency": "0.76s",
+        "throughput": "57tps"
     },
     "gpt-oss-120b": {
         "provider": "openrouter",
         "model": "openrouter/openai/gpt-oss-120b:free",
-        "description": "High capability for complex reasoning",
+        "description": "gpt-oss-120b is an open-weight, 117B-parameter Mixture-of-Experts (MoE) language model from OpenAI designed for high-reasoning, agentic, and general-purpose production use cases. It activates 5.1B parameters per forward pass and is optimized to run on a single H100 GPU with native MXFP4 quantization. The model supports configurable reasoning depth, full chain-of-thought access, and native tool use, including function calling, browsing, and structured output generation.",
         "economy": "free",
-        "responsiveness": "slow",
+        "latency": "0.57s",
+        "throughput": "97tps"
     },
     "nemotron-3-nano-30b": {
         "provider": "openrouter",
         "model": "openrouter/nvidia/nemotron-3-nano-30b-a3b:free",
-        "description": "Specialized for code generation",
+        "description": "NVIDIA Nemotron 3 Nano 30B A3B is a small language MoE model with highest compute efficiency and accuracy for developers to build specialized agentic AI systems. The model is fully open with open-weights, datasets and recipes so developers can easily customize, optimize, and deploy the model on their infrastructure for maximum privacy and security.",
         "economy": "free",
-        "responsiveness": "medium",
+        "latency": "0.42s",
+        "throughput": "228tps"
     },
 }
 
 # Legacy mapping for backward compatibility
 MODEL_TIERS = {
     "simple": AVAILABLE_MODELS["llama-3.1-8b"],
-    "standard": AVAILABLE_MODELS["nemotron-nano-9b"],
     "complex": AVAILABLE_MODELS["gpt-oss-120b"],
-    "code": AVAILABLE_MODELS["nemotron-3-nano-30b"],
 }
 
 
@@ -80,7 +82,6 @@ Analyze the task requirements and select the best model. Consider:
 1. Task complexity and requirements
 2. Model capabilities based on description
 3. Economy preference (cheap/free)
-4. Responsiveness needs (fast/medium/slow)
 
 Respond in JSON format:
 {{
@@ -92,7 +93,7 @@ Respond in JSON format:
 
 CLASSIFICATION_PROMPT = """Analyze the following user query and determine:
 1. Whether it requires a single response or multiple steps
-2. The complexity level (simple, standard, complex, code)
+2. The complexity level (simple, complex)
 3. Your confidence in this classification (0.0 to 1.0)
 
 Confidence guidelines:
@@ -104,7 +105,7 @@ Confidence guidelines:
 Respond in JSON format:
 {
     "plan_type": "single_shot" or "multi_step",
-    "complexity": "simple" | "standard" | "complex" | "code",
+    "complexity": "simple" | "complex",
     "confidence": 0.0 to 1.0,
     "reasoning": "brief explanation"
 }
@@ -116,8 +117,8 @@ If multi_step, also include:
     "confidence": 0.0 to 1.0,
     "reasoning": "explanation",
     "steps": [
-        {"step_number": 1, "task": "description", "complexity": "simple|standard|complex|code", "depends_on": []},
-        {"step_number": 2, "task": "description", "complexity": "simple|standard|complex|code", "depends_on": [1]}
+        {"step_number": 1, "task": "description", "complexity": "simple|complex", "depends_on": []},
+        {"step_number": 2, "task": "description", "complexity": "simple|complex", "depends_on": [1]}
     ]
 }
 
@@ -201,7 +202,7 @@ class MetaRouter:
             )
             return {
                 "plan_type": "single_shot",
-                "complexity": "standard",
+                "complexity": "simple",
                 "reasoning": "Failed to parse classification response",
             }, interaction
 
@@ -237,7 +238,7 @@ class MetaRouter:
 
         # Build models info string for the prompt
         models_info = "\n".join([
-            f"- {name}: {info['description']} (economy: {info['economy']}, responsiveness: {info['responsiveness']})"
+            f"- {name}: {info['description']} (economy: {info['economy']})"
             for name, info in AVAILABLE_MODELS.items()
         ])
 
@@ -310,7 +311,7 @@ class MetaRouter:
         Returns:
             SelectionResult with provider and model details.
         """
-        tier = MODEL_TIERS.get(complexity, MODEL_TIERS["standard"])
+        tier = MODEL_TIERS.get(complexity, MODEL_TIERS["complex"])
 
         # Use classifier confidence, or default to 0.7 if not provided
         selection_confidence = confidence if confidence is not None else 0.7
@@ -343,7 +344,7 @@ class MetaRouter:
             else PlanType.SINGLE_SHOT
         )
 
-        complexity = classification.get("complexity", "standard")
+        complexity = classification.get("complexity", "complex")
         confidence = classification.get("confidence")
         primary_selection = self.select_model(complexity, confidence)
 
@@ -414,7 +415,6 @@ class MetaRouter:
                     name=model_name,
                     description=model_info["description"],
                     economy=model_info.get("economy", ""),
-                    responsiveness=model_info.get("responsiveness", ""),
                     selected=is_selected,
                 )
             )
@@ -422,9 +422,7 @@ class MetaRouter:
         # Build selection reasoning explaining why this model was chosen
         tier_descriptions = {
             "simple": "fast responses with lower capability",
-            "standard": "balanced performance and capability",
             "complex": "high capability for complex reasoning tasks",
-            "code": "specialized code generation and analysis",
         }
 
         selection_reasoning = (
@@ -439,20 +437,10 @@ class MetaRouter:
                 "More capable models (Claude Sonnet, Claude Opus) would be overkill "
                 "for this straightforward query."
             )
-        elif selected_complexity == "standard":
-            selection_reasoning += (
-                "Llama 8B would lack sufficient reasoning capability, "
-                "while Claude Opus would be unnecessarily expensive for this task."
-            )
         elif selected_complexity == "complex":
             selection_reasoning += (
                 "Simpler models would struggle with the required reasoning depth. "
                 "This task requires maximum capability."
-            )
-        elif selected_complexity == "code":
-            selection_reasoning += (
-                "DeepSeek specializes in code tasks with better performance "
-                "than general-purpose models for this use case."
             )
 
         confidence = classification.get("confidence", 0.7)
@@ -487,7 +475,7 @@ class MetaRouter:
             classification["plan_type"] = "multi_step"
 
         plan_type, steps, selection = self.create_plan(classification)
-        selected_complexity = classification.get("complexity", "standard")
+        selected_complexity = classification.get("complexity", "complex")
 
         # Build the full routing decision with classifier interaction details
         routing_decision = self.build_routing_decision(
@@ -521,7 +509,7 @@ class MetaRouter:
             "selection": selection.model_dump(),
             "routing_decision": routing_decision.model_dump(),
             "classification": {
-                "complexity": classification.get("complexity", "standard"),
+                "complexity": classification.get("complexity", "complex"),
                 "reasoning": classification.get("reasoning", ""),
             },
         }

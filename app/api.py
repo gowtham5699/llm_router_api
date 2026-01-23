@@ -24,6 +24,7 @@ from app.models.schemas import (
     SelectModelRequest,
     SemanticSelectionDetails,
     Step,
+    StepSelection,
     TournamentResult,
 )
 
@@ -123,7 +124,8 @@ async def classify(request: ClassifyRequest) -> ClassifyResponse:
             model=info["model"],
             description=info["description"],
             economy=info["economy"],
-            responsiveness=info["responsiveness"],
+            latency=info["latency"],
+            throughput=info["throughput"],
         )
         for name, info in AVAILABLE_MODELS.items()
     ]
@@ -168,22 +170,40 @@ async def select_model_and_execute(request: SelectModelRequest) -> RouteResponse
 
     messages = [Message(role="user", content=request.original_prompt)]
 
-    # For multi-step, we need to build steps with semantic selection per step
+    # For multi-step, we need to build steps with per-step model selection
     steps = None
+    step_semantic_details = {}
     if plan_type == PlanType.MULTI_STEP:
         step_data = request.classification.get("steps", [])
         steps = []
+        
+        # Build a lookup for user's per-step selections
+        step_selections_map = {}
+        if request.step_selections:
+            for ss in request.step_selections:
+                step_selections_map[ss.step_number] = ss
+        
         for s in step_data:
-            # For each step, do semantic selection based on the step task
-            step_selection, _ = await meta_router.semantic_model_selection(
-                task=s.get("task", ""),
-                user_preference=request.user_preference,
-                selected_model_name=request.selected_model_name,
+            step_num = s.get("step_number", len(steps) + 1)
+            step_task = s.get("task", "Unknown task")
+            
+            # Get user's selection for this step (if any)
+            user_step_selection = step_selections_map.get(step_num)
+            step_model_name = user_step_selection.selected_model_name if user_step_selection else None
+            step_preference = user_step_selection.user_preference if user_step_selection else request.user_preference
+            
+            # Do semantic selection for this step
+            step_selection, step_details = await meta_router.semantic_model_selection(
+                task=step_task,
+                user_preference=step_preference,
+                selected_model_name=step_model_name,
             )
+            step_semantic_details[step_num] = step_details
+            
             steps.append(
                 Step(
-                    step_number=s.get("step_number", len(steps) + 1),
-                    task=s.get("task", "Unknown task"),
+                    step_number=step_num,
+                    task=step_task,
                     model=step_selection.model,
                     complexity=s.get("complexity", ""),
                     depends_on=s.get("depends_on", []),
@@ -216,6 +236,8 @@ async def select_model_and_execute(request: SelectModelRequest) -> RouteResponse
         response.metadata = {}
     response.metadata["semantic_selection"] = semantic_details
     response.metadata["classification"] = request.classification
+    if step_semantic_details:
+        response.metadata["step_semantic_details"] = step_semantic_details
 
     return response
 

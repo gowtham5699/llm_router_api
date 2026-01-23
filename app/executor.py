@@ -389,9 +389,13 @@ class Executor:
                         temperature=temperature,
                         max_tokens=max_tokens,
                     )
-                    step.output = result.content
+                    # Handle empty responses
+                    output_content = result.content
+                    if not output_content or output_content.strip() == "":
+                        output_content = f"[Model returned empty response for step {step.step_number}]"
+                    step.output = output_content
                     step.status = "completed"
-                    step_outputs[step.step_number] = result.content
+                    step_outputs[step.step_number] = output_content
                     step_latencies[step.step_number] = result.latency_ms
                     if result.usage:
                         for key in total_usage:

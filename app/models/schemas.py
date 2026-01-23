@@ -61,7 +61,7 @@ class Step(BaseModel):
         default=None, description="Model selected for this step"
     )
     complexity: str | None = Field(
-        default=None, description="Complexity tier for this step (simple, standard, complex, code)"
+        default=None, description="Deprecated: No longer used. Model is selected dynamically."
     )
     depends_on: list[int] = Field(
         default_factory=list, description="Step numbers this step depends on"
@@ -78,7 +78,8 @@ class AvailableModel(BaseModel):
     model: str = Field(..., description="Full model identifier")
     description: str = Field(..., description="Model description/capability summary")
     economy: str = Field(..., description="Cost tier (cheap, free)")
-    responsiveness: str = Field(..., description="Speed tier (fast, medium, slow)")
+    latency: str = Field(..., description="Response latency (e.g., 0.61s)")
+    throughput: str = Field(..., description="Tokens per second (e.g., 17tps)")
 
 
 class ModelOption(BaseModel):
@@ -90,7 +91,8 @@ class ModelOption(BaseModel):
     name: str = Field(default="", description="Model short name")
     description: str = Field(..., description="Model description/capability summary")
     economy: str = Field(default="", description="Cost tier (cheap, free)")
-    responsiveness: str = Field(default="", description="Speed tier (fast, medium, slow)")
+    latency: str = Field(default="", description="Response latency (e.g., 0.61s)")
+    throughput: str = Field(default="", description="Tokens per second (e.g., 17tps)")
     selected: bool = Field(default=False, description="Whether this model was selected")
 
 
@@ -129,10 +131,10 @@ class RoutingDecision(BaseModel):
         ..., description="All models that were considered"
     )
     detected_complexity: str = Field(
-        ..., description="Complexity level detected by classifier"
+        ..., description="Selected model name (formerly complexity level)"
     )
     classification_reasoning: str = Field(
-        ..., description="Why this complexity was assigned"
+        ..., description="Why this model was selected for the task"
     )
     selection_reasoning: str = Field(
         ..., description="Why the selected model was chosen over others"
@@ -160,17 +162,32 @@ class ClassifyResponse(BaseModel):
     )
 
 
+class StepSelection(BaseModel):
+    """User's model selection and preference for a single step."""
+
+    step_number: int = Field(..., description="Step number (1-indexed)")
+    selected_model_name: str | None = Field(
+        default=None, description="User's selected model for this step (None for auto-select)"
+    )
+    user_preference: str = Field(
+        default="", description="User's preference for this step's model selection"
+    )
+
+
 class SelectModelRequest(BaseModel):
     """Request for the Select a Model flow (phase 2a)."""
 
     original_prompt: str = Field(..., description="Original user prompt")
     selected_model_name: str | None = Field(
-        default=None, description="User's selected model name (if pre-selected)"
+        default=None, description="User's selected model name for single-shot (if pre-selected)"
     )
     user_preference: str = Field(
-        default="", description="User's second input/preference for model selection"
+        default="", description="User's preference for single-shot model selection"
     )
     classification: dict = Field(..., description="Classification from phase 1")
+    step_selections: list[StepSelection] | None = Field(
+        default=None, description="Per-step model selections for multi-step execution"
+    )
 
 
 class SemanticSelectionDetails(BaseModel):
